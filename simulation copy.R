@@ -7,7 +7,7 @@ if (!require(BiGER)) {
 source("~/Desktop/Thesis 25 CB/algorithms copy.R")
 
 r <- sim_ranking(n_good = 200, n_bad = 100, n_items = 50)
-history <- sim_rounds(r, n_good_received = 11, number_of_rounds = 10)
+history <- sim_rounds(r, n_good_received = 101, number_of_rounds = 20)
 
 #heatmap(history[[9]]$trust_matrix)
 
@@ -17,7 +17,9 @@ row_colors <- ifelse(1:nrow(tm) <= n_good, "blue", "red")
 col_colors <- ifelse(1:ncol(tm) <= n_good, "blue", "red")
 
 heatmap(
-  history[[9]]$trust_matrix,
+  history[[19]]$trust_matrix,
+  Rowv = NA,  
+  Colv = NA,  
   RowSideColors = row_colors,
   ColSideColors = col_colors,
   scale = "none",
@@ -29,5 +31,6 @@ heatmap(
 # alpha <- 3
 # beta <- 2
 # pgamma(1 / sigmas, shape = alpha, rate = beta)
+
 
 
