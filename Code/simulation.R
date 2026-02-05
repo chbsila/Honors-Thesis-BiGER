@@ -45,7 +45,7 @@ evaluate_one_run <- function(n_good, n_bad, n_items, intersection) {
 ################################
 
 run_experiment <- function(n_items = 50,
-                           total_processes = 300,
+                           total_processes = 301,
                            reps = 100) {
   
   intersections <- c("A","B","C")
