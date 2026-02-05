@@ -1,4 +1,8 @@
-library(BiGER)
+## Install Packages
+if (!require(BiGER)) {
+  devtools::install_github("kevin931/BiGER")
+}
+
 library(ggplot2)
 
 source("~/Desktop/Thesis 25 CB/algorithms.R")
