@@ -16,8 +16,11 @@ evaluate_one_run <- function(n_good, n_bad, n_items, intersection) {
   r <- sim_ranking(n_good, n_bad, n_items)
   
   if (intersection == "A") network <- intersection_model_A(n_good, n_bad)
+  if (intersection == "A'") network <- intersection_model_A_prime(n_good, n_bad)
   if (intersection == "B") network <- intersection_model_B(n_good, n_bad)
+  # if (intersection == "B'") network <- intersection_model_B_prime(n_good, n_bad)
   if (intersection == "C") network <- intersection_model_C(n_good, n_bad)
+  if (intersection == "C'") network <- intersection_model_C_prime(n_good, n_bad)
   
   out <- sim_round(r, network)
   results <- out$results
