@@ -6,7 +6,7 @@ library(dplyr)
 # Load your algorithm definitions
 source("~/Desktop/Thesis 25 CB/algorithms.R")
 
-run_experiment <- function(intersections = c("A", "B", "C"), 
+run_experiment <- function(intersections = c("A", "A'", "B", "C", "C'"), 
                            k_values = 2:10,
                            n_good = 201,
                            n_bad  = 100,
@@ -136,13 +136,13 @@ plot_results <- function(summary_df,
 set.seed(1)
 
 results <- run_experiment(
-  intersections = c("A", "B", "C"), # add B, C
-  k_values = 2:10,
+  intersections = c("A, B, C, A', C'"), # add B, C
+  k_values = 10:10,
   n_good = 201,
   n_bad  = 100,
   n_items = 50,
   max_rounds = 50,
-  repetitions = 20,     
+  repetitions = 30,     
   metric = "kendall",
   seed = 1
 )
