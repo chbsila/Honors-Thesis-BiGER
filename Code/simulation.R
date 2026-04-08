@@ -1,26 +1,37 @@
-## Install Packages
+################################
+## 0. Packages and Setup
+################################
+
 if (!require(BiGER)) {
   devtools::install_github("kevin931/BiGER")
 }
 
+library(BiGER)
 library(ggplot2)
+library(future)
+library(future.apply)
 
+# Use multicore parallelization
+plan(multicore)
+
+# Load your algorithms
 source("~/Desktop/Thesis 25 CB/algorithms.R")
 
 ################################
-# ONE SIMULATION
+## 1. Single Run Evaluation
 ################################
 
 evaluate_one_run <- function(n_good, n_bad, n_items, intersection) {
   
   r <- sim_ranking(n_good, n_bad, n_items)
   
-  if (intersection == "A") network <- intersection_model_A(n_good, n_bad)
-  if (intersection == "A'") network <- intersection_model_A_prime(n_good, n_bad)
-  if (intersection == "B") network <- intersection_model_B(n_good, n_bad)
-  # if (intersection == "B'") network <- intersection_model_B_prime(n_good, n_bad)
-  if (intersection == "C") network <- intersection_model_C(n_good, n_bad)
-  if (intersection == "C'") network <- intersection_model_C_prime(n_good, n_bad)
+  network <- switch(intersection,
+                    "A"  = intersection_model_A(n_good, n_bad),
+                    "A'" = intersection_model_A_prime(n_good, n_bad),
+                    "B"  = intersection_model_B(n_good, n_bad),
+                    "B'" = intersection_model_B_prime(n_good, n_bad),
+                    "C"  = intersection_model_C(n_good, n_bad),
+                    "C'" = intersection_model_C_prime(n_good, n_bad))
   
   out <- sim_round(r, network)
   results <- out$results
@@ -44,81 +55,109 @@ evaluate_one_run <- function(n_good, n_bad, n_items, intersection) {
 }
 
 ################################
-# EXPERIMENT LOOP
+## 2. Parallelized Experiment Loop
 ################################
 
-run_experiment <- function(n_items = 50,
-                           total_processes = 301,
-                           reps = 100) {
+run_experiment_parallel <- function(n_items = 50, total_processes = 300, reps = 50) {
   
-  intersections <- c("A", "A'", "B","C", "C'")
-  results_df <- data.frame()
+  intersections <- c("A", "A'", "B", "B'", "C", "C'")
+  byzantine_counts <- 1:99
   
-  for (int in intersections) {
-    cat("Running intersection", int, "\n")
+  # Parameter grid
+  param_grid <- expand.grid(intersection = intersections,
+                            n_bad = byzantine_counts)
+  
+  # Run in parallel
+  results_list <- future_lapply(1:nrow(param_grid), function(idx) {
+    int <- param_grid$intersection[idx]
+    n_bad <- param_grid$n_bad[idx]
+    n_good <- total_processes - n_bad
     
-    for (t in 1:100) {
-      cat("  Byzantine:", t, "\n")
-      
-      n_bad  <- t
-      n_good <- total_processes - t
-      
-      run_stats <- replicate(reps, evaluate_one_run(n_good, n_bad, n_items, int))
-      run_stats <- t(run_stats)
-      
-      row <- data.frame(
-        intersection = int,
-        n_bad = n_bad,
-        mean_tau = mean(run_stats[, "mean_tau"]),
-        sd_tau   = sd(run_stats[, "mean_tau"]),
-        mean_spear = mean(run_stats[, "mean_spear"]),
-        sd_spear   = sd(run_stats[, "sd_spear"])
-      )
-      
-      results_df <- rbind(results_df, row)
-    }
-  }
+    run_stats <- replicate(reps, evaluate_one_run(n_good, n_bad, n_items, int), simplify = "matrix")
+    run_stats <- t(run_stats)
+    
+    data.frame(
+      intersection = int,
+      n_bad = n_bad,
+      mean_tau = mean(run_stats[, "mean_tau"]),
+      sd_tau   = sd(run_stats[, "mean_tau"]),
+      mean_spear = mean(run_stats[, "mean_spear"]),
+      sd_spear   = sd(run_stats[, "mean_spear"])
+    )
+  }, future.seed = TRUE)
   
-  write.csv(results_df, "intersection_experiment_full.csv", row.names = FALSE)
+  results_df <- do.call(rbind, results_list)
+  
+  # Save CSV
+  write.csv(results_df, "thing_run.csv", row.names = FALSE)
+  
   return(results_df)
 }
 
 ################################
-# PLOT
+## 3. Plotting Functions
 ################################
 
-plot_results <- function(df) {
+plot_combined_metric <- function(df, metric = "tau") {
   
-  p1 <- ggplot(df, aes(x = n_bad, y = mean_tau, color = intersection)) +
+  metric_col <- ifelse(metric == "tau", "mean_tau", "mean_spear")
+  sd_col     <- ifelse(metric == "tau", "sd_tau", "sd_spear")
+  y_lab      <- ifelse(metric == "tau", "Average Kendall's Tau", "Average Spearman Correlation")
+  title_text <- ifelse(metric == "tau", "Kendall's Tau vs Byzantine Processes",
+                       "Spearman Correlation vs Byzantine Processes")
+  
+  p <- ggplot(df, aes(x = n_bad, y = !!as.name(metric_col), color = intersection)) +
     geom_line(size = 1) +
-    geom_ribbon(aes(ymin = mean_tau - sd_tau,
-                    ymax = mean_tau + sd_tau,
+    geom_ribbon(aes(ymin = !!as.name(metric_col) - !!as.name(sd_col),
+                    ymax = !!as.name(metric_col) + !!as.name(sd_col),
                     fill = intersection),
                 alpha = 0.2, color = NA) +
-    labs(title = "Kendall Tau vs Byzantine Processes",
+    labs(title = title_text,
          x = "Number of Byzantine Processes",
-         y = "Mean Kendall Tau") +
-    theme_minimal()
+         y = y_lab) +
+    theme_minimal() +
+    theme(text = element_text(size = 14))
   
-  p2 <- ggplot(df, aes(x = n_bad, y = mean_spear, color = intersection)) +
-    geom_line(size = 1) +
-    geom_ribbon(aes(ymin = mean_spear - sd_spear,
-                    ymax = mean_spear + sd_spear,
-                    fill = intersection),
-                alpha = 0.2, color = NA) +
-    labs(title = "Spearman vs Byzantine Processes",
-         x = "Number of Byzantine Processes",
-         y = "Mean Spearman Correlation") +
-    theme_minimal()
+  print(p)
+  ggsave(paste0("combined_", metric, ".png"), p, width = 8, height = 5)
+}
+
+plot_individual_intersections <- function(df, metric = "tau") {
   
-  print(p1)
-  print(p2)
+  metric_col <- ifelse(metric == "tau", "mean_tau", "mean_spear")
+  sd_col     <- ifelse(metric == "tau", "sd_tau", "sd_spear")
+  y_lab      <- ifelse(metric == "tau", "Average Kendall's Tau", "Average Spearman Correlation")
+  
+  for (int in unique(df$intersection)) {
+    df_int <- subset(df, intersection == int)
+    
+    p <- ggplot(df_int, aes(x = n_bad, y = !!as.name(metric_col))) +
+      geom_line(color = "blue", size = 1) +
+      geom_ribbon(aes(ymin = !!as.name(metric_col) - !!as.name(sd_col),
+                      ymax = !!as.name(metric_col) + !!as.name(sd_col)),
+                  alpha = 0.2, fill = "blue", color = NA) +
+      labs(title = paste0(int, ": ", y_lab, " vs Byzantine Processes"),
+           x = "Number of Byzantine Processes",
+           y = y_lab) +
+      theme_minimal() +
+      theme(text = element_text(size = 14))
+    
+    print(p)
+    ggsave(paste0("intersection_", int, "_", metric, ".png"), p, width = 8, height = 5)
+  }
 }
 
 ################################
-# RUN
+## 4. Run Experiment and Plot
 ################################
 
-df <- run_experiment(n_items = 50, reps = 100)
-plot_results(df)
+df <- run_experiment_parallel(n_items = 50, total_processes = 300, reps = 50)
+
+# Combined plots
+plot_combined_metric(df, metric = "tau")
+plot_combined_metric(df, metric = "spear")
+
+# Individual intersection plots
+plot_individual_intersections(df, metric = "tau")
+plot_individual_intersections(df, metric = "spear")
 
