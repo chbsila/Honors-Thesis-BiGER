@@ -1,148 +1,130 @@
 library(BiGER)
 
 rank_aggregation <- function(r) {
-  
-  return(BiGER::BiGER(r,
-                      n_r = rep(nrow(r), ncol(r)),
-                      n_u = rep(0, ncol(r)))
-  )
+  # Wrapper for BiGER
+  # r: matrix of rankings
+  return(BiGER::BiGER(
+    r,
+    n_r = rep(nrow(r), ncol(r)),
+    n_u = rep(0, ncol(r))
+  ))
 }
 
-sim <- function(n_items, n_processes, rho=0.5){
-  # ```
-  # This function simulates ranked lists from the latent variable model proposed
-  # by Wang et al. (2025). For now, let's focus on fully ranked lists first.
+sim <- function(n_items, n_processes, rho = 0.5) {
+  # Simulates fully ranked lists using latent variable model (Wang et al., 2025)
+  # n_items: total number of items
+  # n_processes: total number of processes
+  # rho: correlation between local and global importance
   
-  # (int) num_items: Total number of items being ranked.
-  # (int) num_processes: Total number of processes.
-  # (vec) rho: The correlation between a gene's local importance and global importance.
-  
-  # Truth
-  sigma_s2=rho^(-2)-1 #study variance
+  # Ground truth
+  sigma_s2 <- rho^(-2) - 1
   mu_i <- rnorm(n_items)
-  true_rank=rank(-mu_i)
+  true_rank <- rank(-mu_i)
   
-  ## simulate data for each process
-  w  <- matrix(NA,n_items,n_processes)
-  r  <- matrix(NA,n_items,n_processes)
+  # Simulate rankings for each process
+  w <- matrix(NA, n_items, n_processes)
+  r <- matrix(NA, n_items, n_processes)
   
   for (p in 1:n_processes) {
-    w[,p] <- mu_i + rnorm(n_items, mean=0, sd=sqrt(sigma_s2))
-    r[,p] <- rank(-w[,p])
+    w[, p] <- mu_i + rnorm(n_items, mean = 0, sd = sqrt(sigma_s2))
+    r[, p] <- rank(-w[, p])
   }
   
-  return(list(r=r,true_rank=true_rank))
+  return(list(r = r, mu_i = mu_i, true_rank = true_rank))
 }
 
 sim_ranking <- function(n_good, n_bad, n_items) {
-  # ```
-  # This function simulates a batch of good ranking and a batch of
-  # byzantine ranking. All the byzantine rankings might collude with each other.
-  
-  # (int) n_good: Total number of good processes
-  # (int) n_bad: Total number of bad processes.
-  # (int) n_items: Total number of items being ranked.
+  # Simulate a batch of good and Byzantine rankings
+  # n_good: number of good processes
+  # n_bad: number of Byzantine processes
+  # n_items: number of items being ranked
   
   good <- sim(n_items, n_good)
-  bad <- sim(n_items, n_bad) 
-  return(list("good" = good, "bad" = bad))
+  bad <- sim(n_items, n_bad)
+  return(list(good = good, bad = bad))
 }
 
-intersection_model_A <- function(n_good, n_bad){
-  # ```
-  # This function constructs intersection model A.
-  # Each good process hears from itself, and (n - t - 1) other processes 
-  # sampled uniformly at random
-  
-  # (int) n_good: Total number of good processes.
-  # (int) n_bad: Total number of Byzantine processes.
-  
-  # network[i, j] = 1 means good receiver i receives a message from sender j.
-  
+# ---------------------------
+# Intersection models
+# ---------------------------
+intersection_model_A <- function(n_good, n_bad) {
+  # Model A: each good process hears from itself and (n-t-1) others randomly
   n <- n_good + n_bad
   t <- n_bad
   good_ids <- 1:n_good
   all_ids <- 1:n
   
-  network <- matrix(0, nrow = n_good, ncol = n)
+  network <- matrix(0, n, n)
   
-  for (i in good_ids){
-    network[i, i] <- 1
-    network[i, sample(setdiff(all_ids, i), n-t-1)] <- 1   # n-t-1 processes at random
-  }
-  
-  return(network)
-}
-
-intersection_model_A_prime <- function(n_good, n_bad){
-  # ```
-  # This function constructs intersection model A'.
-  # Each good process hears from itself, all t Byzantine processes and (n - 2t - 1) other good processes 
-  # sampled uniformly at random
-  # This is the more pessimistic version of model A
-  
-  # (int) n_good: Total number of good processes.
-  # (int) n_bad: Total number of Byzantine processes.
-  
-  # network[i, j] = 1 means good receiver i receives a message from sender j.
-  
-  n <- n_good + n_bad
-  t <- n_bad
-  good_ids <- 1:n_good
-  byzantine_ids <- (n_good+1):n
-  network <- matrix(0, nrow = n_good, ncol = n)
-  
-  for (i in good_ids){
-    network[i, i] <- 1
-    network[i, sample(setdiff(good_ids, i), n-2*t-1)] <- 1   # n-2t-1 good processes at random
-    for (j in byzantine_ids){
-      network[i,j] <- 1 # Byzantine inputs are always present 
-    }
-  }
-  return(network)
-}
-
-intersection_model_B <- function(n_good, n_bad){
-  # ```
-  # This function constructs intersection model B.
-  # This model is really tight 
-  
-  # (int) n_good: Total number of good processes.
-  # (int) n_bad: Total number of Byzantine processes.
-  
-  # network[i, j] = 1 means good receiver i receives a message from sender j.
-  
-  n <- n_good + n_bad
-  t <- n_bad
-  good_ids <- 1:n_good
-  
-  network <- matrix(0, nrow = n_good, ncol = n)
-  
-  sample_size <- (n - t - 1) # other than itself
   for (i in good_ids) {
-    network[i, i] <- 1  # M = {i}
-    candidates <- setdiff(1:n, i) 
-    S_i <- sample(candidates, sample_size) # uniformly at random 
-    
-    for (s in S_i){
-      network[i, s] <- 1 # Each good process gets n-t messages
-    }
-    
-    # for (s in S_i) {
-      # network[i, s] <- 1  # M = M \union {P_s}
-      # good_candidates <- setdiff(good_ids, i)
-      # network[i, sample(good_ids, t)] <- 1   # M = M \union {t good processes at random}
+    network[i, i] <- 1
+    network[i, sample(setdiff(all_ids, i), n - t - 1)] <- 1
   }
   
-  initial_network <- network 
-  sample_size <- (n - 2*t - 1) # I didn't know what to pick
+  return(network)
+}
+
+intersection_model_A_prime <- function(n_good, n_bad) {
+  # Model A': each good process hears from itself, all Byzantine, and (n-2t-1) other good processes
+  n <- n_good + n_bad
+  t <- n_bad
+  good_ids <- 1:n_good
+  byzantine_ids <- (n_good + 1):n
+  network <- matrix(0, n, n)
   
-  for (i in good_ids){
-    candidates <- setdiff(good_ids, i) 
-    S_i <- sample(candidates, sample_size) # uniformly at random 
-    
-    # Copy all of this sample's initial messages
-    for (s in S_i){
+  for (i in good_ids) {
+    network[i, i] <- 1
+    network[i, sample(setdiff(good_ids, i), n - 2 * t - 1)] <- 1
+    network[i, byzantine_ids] <- 1
+  }
+  
+  return(network)
+}
+
+intersection_model_B <- function(n_good, n_bad) {
+  # Model B: gossip-like structure
+  n <- n_good + n_bad
+  t <- n_bad
+  good_ids <- 1:n_good
+  all_ids <- 1:n
+  
+  network <- matrix(0, n, n)
+  sample_size <- n - t - 1
+  
+  # Initial random sampling
+  for (i in all_ids) {
+    network[i, i] <- 1
+    S_i <- sample(setdiff(all_ids, i), sample_size)
+    network[i, S_i] <- 1
+  }
+  
+  initial_network <- network
+  
+  # Gossip step: incorporate messages from random other processes
+  for (i in good_ids) {
+    S_i <- sample(setdiff(all_ids, i), sample_size)
+    for (s in S_i) {
+      network[i, ] <- pmax(network[i, ], initial_network[s, ])
+    }
+  }
+  
+  return(network)
+}
+
+intersection_model_B_prime <- function(n_good, n_bad) {
+  # Model B': initialized using A'
+  n <- n_good + n_bad
+  t <- n_bad
+  good_ids <- 1:n_good
+  all_ids <- 1:n
+  sample_size <- n - t - 1
+  
+  network <- intersection_model_A_prime(n_good, n_bad)
+  initial_network <- network
+  
+  for (i in good_ids) {
+    S_i <- sample(setdiff(all_ids, i), sample_size)
+    for (s in S_i) {
       network[i, ] <- pmax(network[i, ], initial_network[s, ])
     }
   }
@@ -151,128 +133,92 @@ intersection_model_B <- function(n_good, n_bad){
 }
 
 intersection_model_C <- function(n_good, n_bad) {
-  # ```
-  # This function constructs intersection model C.
-  # We build nested super sets A_1, A_2, ..., A_{t+1}, where:
-  # |A_1| = n-t and each A_{k+1} adds one new process from the remainder
-  # Then, each good process selects one A_k uniformly at random and hears from
-  # all processes in that super set.
-  
-  # (int) n_good: Total number of good processes.
-  # (int) n_bad: Total number of bad (Byzantine) processes.
-  
-  # network[i, j] = 1 means good receiver i receives a message from sender j.
-  
+  # Model C: nested supersets, tight intersections
   n <- n_good + n_bad
   t <- n_bad
   good_ids <- 1:n_good
-  bad_ids  <- (n_good + 1):n
   all_ids <- 1:n
-  network <- matrix(0, nrow = n_good, ncol = n)
-  A_sets <- vector("list", t + 1)
-  A_sets[[1]] <- sample(all_ids, n-t)
-  remainder <- setdiff(all_ids, A_sets[[1]])
+  network <- matrix(0, n_good, n)
   
-  remainder <- sample(remainder, t)  # randomize order
+  A_sets <- vector("list", t + 1)
+  A_sets[[1]] <- sample(all_ids, n - t)
+  remainder <- sample(setdiff(all_ids, A_sets[[1]]), t)
   
   for (k in 2:(t + 1)) {
     A_sets[[k]] <- c(A_sets[[k - 1]], remainder[k - 1])
   }
   
-  # Assign each good process a random superset and fill the network 
-  membership <- sample(1:(t + 1), size = n_good, replace = TRUE)
+  membership <- sample(1:(t + 1), n_good, replace = TRUE)
   for (i in 1:n_good) {
-    heard_from <- A_sets[[membership[i]]]
-    network[i, heard_from] <- 1
+    network[i, A_sets[[membership[i]]]] <- 1
   }
   
   return(network)
 }
 
 intersection_model_C_prime <- function(n_good, n_bad) {
-  # ```
-  # This function constructs intersection model C'.
-  # We build nested super sets A_1, A_2, ..., A_{t+1}, where:
-  # |A_1| = n-t and each A_{k+1} adds one new process from the remainder
-  # Then, each good process selects one A_k uniformly at random and hears from
-  # all processes in that super set.
-  # The difference from the baseline C is that A_1 contains all the Byzantine inputs
-  
-  # (int) n_good: Total number of good processes.
-  # (int) n_bad: Total number of bad (Byzantine) processes.
-  
-  # network[i, j] = 1 means good receiver i receives a message from sender j.
-  
+  # Model C': A_1 contains all Byzantine processes
   n <- n_good + n_bad
   t <- n_bad
   good_ids <- 1:n_good
-  bad_ids  <- (n_good + 1):n
+  bad_ids <- (n_good + 1):n
   all_ids <- 1:n
-  network <- matrix(0, nrow = n_good, ncol = n)
+  network <- matrix(0, n_good, n)
+  
   A_sets <- vector("list", t + 1)
-  
-  # Byzantine inputs are always present in A_1
-  A_sets[[1]] <- sample(good_ids, n-2*t)
-  A_sets[[1]] <- c(A_sets[[1]], bad_ids)
-  
-  remainder <- setdiff(all_ids, A_sets[[1]])
-  
-  remainder <- sample(remainder, t)  # randomize order
+  A_sets[[1]] <- c(sample(1:n_good, n - 2 * t), bad_ids)
+  remainder <- sample(setdiff(all_ids, A_sets[[1]]), t)
   
   for (k in 2:(t + 1)) {
     A_sets[[k]] <- c(A_sets[[k - 1]], remainder[k - 1])
   }
   
-  # Assign each good process a random superset and fill the network 
-  membership <- sample(1:(t + 1), size = n_good, replace = TRUE)
+  membership <- sample(1:(t + 1), n_good, replace = TRUE)
   for (i in 1:n_good) {
-    heard_from <- A_sets[[membership[i]]]
-    network[i, heard_from] <- 1
+    network[i, A_sets[[membership[i]]]] <- 1
   }
   
   return(network)
 }
 
 sim_round <- function(r, network) {
-  # ```
-  # This function simulates a round of communication given a network configuration.
-  # (matrix) r: Matrix of rankings (good + bad) used in this round
-  # (matrix) network: Pre-computed communication network/intersection
-  # (integer) n_good: number of good processes
-  # (integer) n_bad: number of bad processes
-  
   n_good <- ncol(r$good$r)
-  n_bad  <- ncol(r$bad$r)
-  r_all  <- cbind(r$good$r, r$bad$r)
+  n_bad <- ncol(r$bad$r)
+  r_all <- cbind(r$good$r, r$bad$r)
   
-  results <- list()
-  trust_matrix <- matrix(0, nrow = n_good, ncol = n_good + n_bad)
+  results <- vector("list", n_good + n_bad)
+  trust_matrix <- matrix(0, n_good, n_good + n_bad)
   
   # Good processes
-  for (i in 1:n_good) { 
+  for (i in 1:n_good) {
     ids_used <- which(network[i, ] == 1)
     r_heard <- r_all[, ids_used, drop = FALSE]
     
-    results[[i]] <- list()
-    results[[i]][["id_good"]] <- i
-    results[[i]][["ids_used"]] <- ids_used
-    results[[i]][["ra"]] <- rank_aggregation(r_heard)
-    results[[i]][["posterior_ranking"]] <- rank(-results[[i]]$ra$mu)
+    ra <- rank_aggregation(r_heard)
+    post_now <- rank(-ra$mu)
     
-    sigmas <- results[[i]]$ra$sigma2
+    # Normalize sigmas to trust
+    sigmas <- ra$sigma2
     sigmas <- (sigmas - min(sigmas)) / (max(sigmas) - min(sigmas))
     trust_matrix[i, ids_used] <- 1 - sigmas
+    
+    results[[i]] <- list(
+      id_good = i,
+      ids_used = ids_used,
+      ra = ra,
+      posterior_ranking = post_now
+    )
   }
   
-  # Bad processes
+  # Bad processes: random rankings
   for (j in 1:n_bad) {
     idx <- n_good + j
-    results[[idx]] <- list()
-    results[[idx]][["posterior_ranking"]] <- sample(1:nrow(r_all))
+    results[[idx]] <- list(posterior_ranking = sample(1:nrow(r_all)))
   }
   
   return(list(results = results, trust_matrix = trust_matrix))
 }
+
 
 kendall_tau <- function(true_rank, estimated_rank) {
   cor(true_rank, estimated_rank, method = "kendall")
