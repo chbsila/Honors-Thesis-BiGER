@@ -3,4 +3,4 @@
 
 - Thesis Advisors: Hammurabi Mendes and Kevin Wang
 
-- Topic: Byzantine Rank Aggregation
+- Topic: Bayesian Rank Aggregation and Distributed Computing
