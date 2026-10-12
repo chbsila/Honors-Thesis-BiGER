@@ -1,4 +1,4 @@
-# Honors Thesis: Bayesian Rank Aggregation and Distributed Computing
+# Honors Thesis Repo
 
 **A Statistical Study of Byzantine Consensus via Bayesian Rank Aggregation**
 
