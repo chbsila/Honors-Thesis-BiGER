@@ -4,9 +4,6 @@ library(reshape2)
 library(dplyr)
 library(coda)
 
-# Load your algorithm definitions
-source("~/Desktop/Thesis 25 CB/algorithms.R")
-
 run_experiment <- function(intersections = c("A", "A'", "B", "C", "C'"), 
                            k_values = 2:10,
                            n_good = 201,
